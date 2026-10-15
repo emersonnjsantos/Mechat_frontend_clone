@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">WhatsApp</string>
+    <string name="title_chats">Conversas</string>
+    <string name="title_updates">Atualizações</string>
+    <string name="title_communities">Comunidades</string>
+    <string name="title_calls">Chamadas</string>
+</resources>

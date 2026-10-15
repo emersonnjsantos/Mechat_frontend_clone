@@ -1,0 +1,65 @@
+syntax = "proto3";
+
+package com.whatsapp.clone.proto;
+
+option java_package = "com.whatsapp.clone.proto";
+option java_multiple_files = true;
+
+enum MessageType {
+    TEXT = 0;
+    IMAGE = 1;
+    AUDIO = 2;
+    VIDEO = 3;
+    DOCUMENT = 4;
+    VOIP_CALL = 5;
+    POST_QUANTUM_KEY_EXCHANGE = 6;
+}
+
+enum MessageStatus {
+    PENDING = 0;
+    SENT_TO_SERVER = 1;
+    DELIVERED_TO_RECIPIENT = 2;
+    READ_BY_RECIPIENT = 3;
+}
+
+message KyberPqcHandshake {
+    int32 prekey_id = 1;
+    bytes kyber_public_ciphertext = 2;
+    bytes shared_symmetric_key_hash = 3;
+    int64 timestamp = 4;
+}
+
+message AudioNotePayload {
+    int32 duration_seconds = 1;
+    repeated float waveform_samples = 2;
+    string codec = 3; // "opus/mlow"
+    int32 sample_rate = 4; // 16000 or 48000
+}
+
+message MessageStanza {
+    string message_id = 1;
+    string sender_jid = 2;
+    string recipient_jid = 3;
+    int64 timestamp_ms = 4;
+    MessageType type = 5;
+    MessageStatus status = 6;
+    
+    // Encrypted payload or text content
+    string text_content = 7;
+    bytes encrypted_body = 8;
+    bytes initialization_vector = 9;
+    
+    // Sub-payloads
+    AudioNotePayload audio_payload = 10;
+    KyberPqcHandshake pqc_handshake = 11;
+    
+    bool is_ephemeral = 12;
+    int32 ephemeral_expiration_seconds = 13;
+}
+
+message DeliveryReceipt {
+    string message_id = 1;
+    string sender_jid = 2;
+    MessageStatus new_status = 3;
+    int64 receipt_timestamp = 4;
+}
