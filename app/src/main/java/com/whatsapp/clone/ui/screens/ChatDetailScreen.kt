@@ -65,6 +65,7 @@ fun ChatDetailScreen(
     onDownloadClick: (String) -> Unit,
     onVoiceCallClick: () -> Unit,
     onVideoCallClick: () -> Unit,
+    onCameraClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -332,7 +333,7 @@ fun ChatDetailScreen(
                         },
                         onSendCamera = {
                             showAttachmentSheet = false
-                            launchRealCamera()
+                            onCameraClick()
                         },
                         onSendGallery = {
                             showAttachmentSheet = false
@@ -418,7 +419,7 @@ fun ChatDetailScreen(
 
                             if (inputText.isBlank()) {
                                 IconButton(
-                                    onClick = { launchRealCamera() },
+                                    onClick = onCameraClick,
                                     modifier = Modifier.size(32.dp)
                                 ) {
                                     Icon(

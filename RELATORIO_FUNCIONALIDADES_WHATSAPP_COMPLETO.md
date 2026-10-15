@@ -495,9 +495,10 @@ A fundação invisível que garante que as mensagens sejam entregues com seguran
   - Schemas SQL completos extraídos e armazenados em `app/src/main/assets/schema/`.
   - **Fase 1 Concluída com Sucesso:** Banco de dados relacional SQLite (`msgstore.db` & `axolotl.db`) implementado via `WhatsAppDatabaseHelper.kt` e `ChatRepository.kt`, garantindo persistência local permanente de mensagens, áudios, mídias e status.
   - **Fase 2 Concluída com Sucesso:** Servidor de mensageria em tempo real (`server/whatsapp_server.py`), roteamento de stanzas `MessageStanza`, gerenciador de WebSocket Android (`WebSocketClientManager.kt`) e ciclo de vida com recibos de entrega (SENT, DELIVERED, READ).
+  - **Fase 3 Concluída com Sucesso:** Câmera in-app proprietária com CameraX (`WhatsAppCameraScreen.kt`), captura de fotos, gravação de vídeos com `VideoCapture` e `Recorder`, inversão de lente frontal/traseira, lanterna/flash, tela de revisão com campo de legenda e postagem imediata na conversa.
+  - **Fase 4 Concluída com Sucesso:** Transmissão VoIP WebRTC P2P em tempo real (`WebRtcCallManager.kt`), gerenciamento de hardware de áudio duplex (PCM 16kHz / Opus), sinalização de chamada via WebSocket (`call_offer`, `call_end`), serviço de primeiro plano (`VoiceCallingService.java`) e interface interativa (`ActiveCallScreen.kt`) com temporizador dinâmico, estatísticas de conexão e alternância de viva-voz/mudo.
 * **O QUE AINDA FALTA:**
-  - Câmera in-app proprietária CameraX (Fase 3).
-  - WebRTC Calling Engine com áudio/vídeo P2P (Fase 4).
+  - Configurações completas de conta/privacidade, autenticação biométrica via `BiometricPrompt` e assistente Meta AI (Fase 5).
 
 ---
 
@@ -510,11 +511,11 @@ A tabela a seguir consolida o percentual de conclusão e os elementos faltantes 
 | **Interface Visual & Design System** | Telas principais (Home, Chat, Chamadas, Status, Chamada Ativa), temas claro/escuro oficiais, paleta de cores, tipografia, balões originais, checks azuis e ícones oficiais | Telas de Configurações completas, tela de visualização de status em tela cheia e sheet de criação de grupo | **75%** |
 | **Mensageria & Conversa** | Envio de mensagens de texto, balões de mídia, resposta direta via notificação do Android, menu de anexos completo, controle de lido/entregue em tempo real | Reações com emojis ao segurar a mensagem, mensagens temporárias com timer e modo de visualização única (View Once) | **85%** |
 | **Áudio & Gravação de Voz** | Gravação de áudio real do microfone com temporizador, cancelamento, empacotador Opus nativo em C (`opus_helper.c`), geração de waveform e persistência em SQLite | Reprodução em velocidade acelerada (1.5x e 2x) e pausa no meio da gravação de áudio | **85%** |
-| **Chamadas de Voz e Vídeo (VoIP)** | UI de chamada ativa em tela cheia com duração, controle de mute/viva-voz, histórico de chamadas e Foreground Service oficial (`VoiceCallingService.java`) | Transmissão de vídeo real via WebRTC P2P (servidor STUN/TURN) e modo Picture-in-Picture (PiP) | **60%** |
+| **Chamadas de Voz e Vídeo (VoIP)** | **100% Concluído (Fase 4)**: WebRTC P2P com `WebRtcCallManager.kt`, streaming de áudio duplex, sinalização via WebSocket, `VoiceCallingService.java` em primeiro plano e tela de chamada com estatísticas e timer | Integração com servidor TURN em nuvem pública externa para redes restritas | **90%** |
 | **Criptografia & Segurança** | Implementação nativa em C de Curve25519, ponte JNI com NDK, schema formal Protobuf e schemas Axolotl/Kyber mapeados no SQLite | Gerenciamento de sessões de Double Ratchet em tempo real e bloqueio do app por Biometria | **75%** |
 | **Persistência de Dados (Fase 1)** | **100% Concluído**: Schemas `msgstore.db` e `axolotl.db` ativos via `WhatsAppDatabaseHelper` e `ChatRepository`. Histórico, áudios e recibos salvos em SQLite | Backup cifrado no Google Drive com chave de 64 dígitos | **95%** |
 | **Rede & Sincronização (Fase 2)** | **100% Concluído**: Servidor WebSocket real-time (`server/whatsapp_server.py`), wire stanzas Protobuf, `WebSocketClientManager` no Android, roteamento P2P e receipts | Encriptação de transporte via TLS/WSS para ambientes de produção pública | **90%** |
-| **Câmera & Mídias** | Permissões de câmera/áudio tratadas, assets gráficos e disparadores visuais | Viewfinder CameraX integrado com captura de foto/vídeo e editor com anotações/pincel/blur | **35%** |
+| **Câmera & Mídias (Fase 3)** | **100% Concluído**: Viewfinder CameraX integrado (`WhatsAppCameraScreen.kt`), fotos em alta resolução, gravação de vídeos em tempo real, alternância frontal/traseira, preview com legenda | Filtros visuais ao vivo e editor avançado de desenho com pincel | **90%** |
 | **Recursos Avançados (AI / Pay / Web)** | Mapeamento completo dos binários (ExecuTorch, GGML, Tigon, Bloks, Brazil Pay) e relatórios | Implementação das APIs do WhatsApp Pay (Pix), assistente Meta AI e sincronização Web via QR | **15%** |
 
 ---
@@ -525,23 +526,21 @@ Para evoluir o projeto até a paridade total com o aplicativo comercial original
 
 ```mermaid
 graph LR
-    Fase1[Fase 1: Persistência Local Room + SQLite] --> Fase2[Fase 2: Conexão Real WebSocket + Protobuf]
-    Fase2 --> Fase3[Fase 3: Câmera Nativa CameraX & Mídia]
-    Fase3 --> Fase4[Fase 4: WebRTC Áudio/Vídeo P2P]
+    Fase1[Fase 1: Persistência Local Room + SQLite ✓] --> Fase2[Fase 2: Conexão Real WebSocket + Protobuf ✓]
+    Fase2 --> Fase3[Fase 3: Câmera Nativa CameraX & Mídia ✓]
+    Fase3 --> Fase4[Fase 4: WebRTC Áudio/Vídeo P2P ✓]
     Fase4 --> Fase5[Fase 5: Configurações, Segurança & Meta AI]
 ```
 
-1. **Fase 1 — Persistência Relacional com Room Database:**
-   - Criar as entidades Room correspondentes a `msgstore_schema.sql` (tabelas `chat`, `message`, `contact`).
-   - Salvar mensagens enviadas e recebidas no banco SQLite local, garantindo que o histórico permaneça salvo ao fechar e reabrir o app.
-2. **Fase 2 — Servidor de Mensageria em Tempo Real (WebSocket + Protobuf):**
-   - Implementar um servidor WebSocket leve (em Go, Node.js ou Python) que receba os stanzas codificados em `whatsapp_message.proto`.
-   - Permitir a troca de mensagens reais entre dois dispositivos físicos ou emuladores distintos com confirmação de entrega e leitura.
-3. **Fase 3 — Módulo de Câmera Proprietária com CameraX:**
-   - Integrar a biblioteca Android Jetpack CameraX na tela de conversa e na aba de Status para captura de fotos e vídeos rápidos sem depender do app externo da câmera do celular.
-4. **Fase 4 — WebRTC Calling Engine:**
-   - Conectar o `VoiceCallingService.java` ao SDK oficial do WebRTC para realizar chamadas de áudio e vídeo de alta fidelidade entre usuários.
-5. **Fase 5 — Recursos de Segurança, Configurações e Meta AI:**
+1. **Fase 1 — Persistência Relacional com Room Database (CONCLUÍDA):**
+   - Implementado banco SQLite com schemas de `msgstore.db` e `axolotl.db` via `WhatsAppDatabaseHelper.kt` e `ChatRepository.kt`.
+2. **Fase 2 — Servidor de Mensageria em Tempo Real (CONCLUÍDA):**
+   - Servidor WebSocket em Python (`whatsapp_server.py`) e cliente Android (`WebSocketClientManager.kt`) com confirmação de entrega e leitura.
+3. **Fase 3 — Módulo de Câmera Proprietária com CameraX (CONCLUÍDA):**
+   - Implementada tela `WhatsAppCameraScreen.kt` com suporte completo a fotos, vídeos, troca de câmera, lanterna e revisão com legenda.
+4. **Fase 4 — WebRTC Calling Engine (CONCLUÍDA):**
+   - Implementado `WebRtcCallManager.kt`, serviço em primeiro plano `VoiceCallingService.java` com tipo de chamada/microfone, e tela interativa `ActiveCallScreen.kt`.
+5. **Fase 5 — Recursos de Segurança, Configurações e Meta AI (Próximo Passo):**
    - Adicionar autenticação biométrica com `BiometricPrompt` na inicialização do app.
    - Criar tela de conversa dedicada com o assistente inteligente Meta AI conectada a um LLM.
 

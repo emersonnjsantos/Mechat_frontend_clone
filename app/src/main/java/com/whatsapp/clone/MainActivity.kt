@@ -30,6 +30,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import com.whatsapp.clone.ui.camera.WhatsAppCameraScreen
 import com.whatsapp.clone.ui.components.NavigationTab
 import com.whatsapp.clone.ui.components.WhatsAppBottomNavigation
 import com.whatsapp.clone.ui.components.WhatsAppTopBar
@@ -53,6 +54,11 @@ class MainActivity : ComponentActivity() {
                 val activeChatId by viewModel.activeChatId.collectAsState()
                 val calls by viewModel.calls.collectAsState()
                 val isInVoipCall by viewModel.isInVoipCall.collectAsState()
+                val webRtcCallStats by viewModel.webRtcCallStats.collectAsState()
+                val isCallMuted by viewModel.isCallMuted.collectAsState()
+                val isCallSpeakerOn by viewModel.isCallSpeakerOn.collectAsState()
+                val activeCallContactName by viewModel.activeCallContactName.collectAsState()
+                val activeCallIsVideo by viewModel.activeCallIsVideo.collectAsState()
                 val nativeCoreInfo by viewModel.nativeCoreInfo.collectAsState()
 
                 // Real Hardware Audio Recording & Playback States
@@ -69,37 +75,38 @@ class MainActivity : ComponentActivity() {
                 var showLinkedDevicesDialog by remember { mutableStateOf(false) }
                 var showPaymentsDialog by remember { mutableStateOf(false) }
 
-                // Launcher para Câmera Real do Celular (Barra Superior)
-                val topBarCameraLauncher = rememberLauncherForActivityResult(
-                    contract = ActivityResultContracts.TakePicturePreview()
-                ) { bitmap: Bitmap? ->
-                    if (bitmap != null) {
-                        Toast.makeText(context, "Foto da câmera capturada com sucesso!", Toast.LENGTH_SHORT).show()
-                    }
-                }
-
-                val topBarCameraPermission = rememberLauncherForActivityResult(
-                    contract = ActivityResultContracts.RequestPermission()
-                ) { isGranted ->
-                    if (isGranted) {
-                        topBarCameraLauncher.launch(null)
-                    } else {
-                        Toast.makeText(context, "Permissão de câmera necessária", Toast.LENGTH_SHORT).show()
-                    }
-                }
+                // CameraX In-App Fullscreen Screen
+                var showCameraScreen by remember { mutableStateOf(false) }
 
                 when {
                     // 1. VoIP Call Fullscreen Screen
                     isInVoipCall -> {
                         val activeChat = chats.find { it.id == activeChatId }
                         ActiveCallScreen(
-                            contactName = activeChat?.contactName ?: "WhatsApp Contato",
-                            isVideo = false,
+                            contactName = if (activeCallContactName.isNotBlank() && activeCallContactName != "WhatsApp Contato") activeCallContactName else (activeChat?.contactName ?: "WhatsApp Contato"),
+                            isVideo = activeCallIsVideo,
+                            callStats = webRtcCallStats,
+                            isMuted = isCallMuted,
+                            isSpeakerOn = isCallSpeakerOn,
+                            onToggleMute = { viewModel.toggleCallMute() },
+                            onToggleSpeaker = { viewModel.toggleCallSpeaker() },
                             onEndCall = { viewModel.endCall() }
                         )
                     }
 
-                    // 2. Chat Conversation Detail Screen
+                    // 2. CameraX In-App Fullscreen Viewfinder & Capture
+                    showCameraScreen -> {
+                        WhatsAppCameraScreen(
+                            onClose = { showCameraScreen = false },
+                            onMediaCaptured = { file, isVideo, caption ->
+                                val targetChatId = activeChatId ?: 1L
+                                viewModel.sendCapturedMedia(targetChatId, file, isVideo, caption)
+                                showCameraScreen = false
+                            }
+                        )
+                    }
+
+                    // 3. Chat Conversation Detail Screen
                     activeChatId != null -> {
                         val activeChat = chats.find { it.id == activeChatId }
                         if (activeChat != null) {
@@ -125,26 +132,20 @@ class MainActivity : ComponentActivity() {
                                 onClearChat = { viewModel.clearChat(activeChat.id) },
                                 onDownloadClick = { msgId -> viewModel.downloadMessageFile(activeChat.id, msgId) },
                                 onVoiceCallClick = { viewModel.startCall(activeChat.contactName, false) },
-                                onVideoCallClick = { viewModel.startCall(activeChat.contactName, true) }
+                                onVideoCallClick = { viewModel.startCall(activeChat.contactName, true) },
+                                onCameraClick = { showCameraScreen = true }
                             )
                         }
                     }
 
-                    // 3. Main Screen with Top and Bottom Navigation Bars
+                    // 4. Main Screen with Top and Bottom Navigation Bars
                     else -> {
                         Scaffold(
                             topBar = {
                                 Column {
                                     WhatsAppTopBar(
                                         title = "WhatsApp",
-                                        onCameraClick = {
-                                            val hasPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
-                                            if (hasPermission) {
-                                                topBarCameraLauncher.launch(null)
-                                            } else {
-                                                topBarCameraPermission.launch(Manifest.permission.CAMERA)
-                                            }
-                                        },
+                                        onCameraClick = { showCameraScreen = true },
                                         onSearchClick = {
                                             Toast.makeText(context, "Pesquisar conversas e contatos", Toast.LENGTH_SHORT).show()
                                         },

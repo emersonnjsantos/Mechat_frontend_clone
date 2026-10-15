@@ -13,6 +13,7 @@ import com.whatsapp.clone.network.IncomingMessageEvent
 import com.whatsapp.clone.network.IncomingReceiptEvent
 import com.whatsapp.clone.network.WebSocketClientManager
 import com.whatsapp.clone.utils.RealAudioRecorder
+import com.whatsapp.clone.webrtc.*
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -53,6 +54,23 @@ class WhatsAppViewModel(application: Application) : AndroidViewModel(application
     private val _calls = MutableStateFlow<List<CallItem>>(emptyList())
     val calls: StateFlow<List<CallItem>> = _calls.asStateFlow()
 
+    private val webRtcCallManager = WebRtcCallManager(
+        context = application,
+        scope = viewModelScope,
+        webSocketManager = webSocketClient
+    )
+
+    val webRtcCallState: StateFlow<WebRtcCallState> = webRtcCallManager.callState
+    val webRtcCallStats: StateFlow<WebRtcCallStats> = webRtcCallManager.callStats
+    val isCallMuted: StateFlow<Boolean> = webRtcCallManager.isMuted
+    val isCallSpeakerOn: StateFlow<Boolean> = webRtcCallManager.isSpeakerOn
+
+    private val _activeCallContactName = MutableStateFlow("WhatsApp Contato")
+    val activeCallContactName: StateFlow<String> = _activeCallContactName.asStateFlow()
+
+    private val _activeCallIsVideo = MutableStateFlow(false)
+    val activeCallIsVideo: StateFlow<Boolean> = _activeCallIsVideo.asStateFlow()
+
     private val _isInVoipCall = MutableStateFlow(false)
     val isInVoipCall: StateFlow<Boolean> = _isInVoipCall.asStateFlow()
 
@@ -81,6 +99,13 @@ class WhatsAppViewModel(application: Application) : AndroidViewModel(application
         loadInitialData()
         loadNativeCore()
         webSocketClient.connect()
+        viewModelScope.launch {
+            webRtcCallManager.callState.collect { state ->
+                if (state == WebRtcCallState.IDLE || state == WebRtcCallState.ENDED) {
+                    _isInVoipCall.value = false
+                }
+            }
+        }
     }
 
     private fun loadNativeCore() {
@@ -532,6 +557,49 @@ class WhatsAppViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun sendCapturedMedia(chatId: Long, file: File, isVideo: Boolean, caption: String) {
+        val now = timeFormat.format(Date())
+        val mediaType = if (isVideo) MessageType.VIDEO else MessageType.IMAGE
+        val mediaMsg = Message(
+            id = "media_${System.currentTimeMillis()}",
+            chatId = chatId,
+            senderName = "Você",
+            text = caption,
+            timestamp = now,
+            isFromMe = true,
+            type = mediaType,
+            fileName = file.name,
+            fileSize = "${file.length() / 1024} KB",
+            filePath = file.absolutePath,
+            isDownloaded = true,
+            status = MessageStatus.SENT
+        )
+
+        playSound(R.raw.keq)
+
+        _messages.update { currentMap ->
+            val chatMsgs = currentMap[chatId] ?: emptyList()
+            currentMap + (chatId to (chatMsgs + mediaMsg))
+        }
+
+        _chats.update { list ->
+            list.map {
+                val label = if (isVideo) "🎥 Vídeo" else "📷 Foto"
+                val preview = if (caption.isNotBlank()) "$label: $caption" else label
+                if (it.id == chatId) it.copy(lastMessage = preview, lastMessageTime = now) else it
+            }
+        }
+
+        viewModelScope.launch {
+            chatRepository.saveMessage(mediaMsg)
+            webSocketClient.sendMessageStanza(mediaMsg, recipientJid = "engineering@s.whatsapp.net")
+            if (webSocketClient.connectionStatus.value != ConnectionStatus.CONNECTED) {
+                delay(1000)
+                updateMessageStatus(chatId, mediaMsg.id, MessageStatus.READ)
+            }
+        }
+    }
+
     fun clearChat(chatId: Long) {
         stopAudioPlayback()
         _messages.update { map ->
@@ -558,13 +626,25 @@ class WhatsAppViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun startCall(contactName: String, isVideo: Boolean) {
+        _activeCallContactName.value = contactName
+        _activeCallIsVideo.value = isVideo
         _isInVoipCall.value = true
         playSound(R.raw.kgj)
+        webRtcCallManager.startCall(contactName, isVideo)
     }
 
     fun endCall() {
+        webRtcCallManager.endCall()
         _isInVoipCall.value = false
         playSound(R.raw.kfn)
+    }
+
+    fun toggleCallMute(): Boolean {
+        return webRtcCallManager.toggleMute()
+    }
+
+    fun toggleCallSpeaker(): Boolean {
+        return webRtcCallManager.toggleSpeaker()
     }
 
     private fun playSound(resId: Int) {
@@ -623,6 +703,7 @@ class WhatsAppViewModel(application: Application) : AndroidViewModel(application
         super.onCleared()
         stopAudioPlayback()
         audioRecorder.cancelRecording()
+        webRtcCallManager.endCall()
         webSocketClient.disconnect()
     }
 }
