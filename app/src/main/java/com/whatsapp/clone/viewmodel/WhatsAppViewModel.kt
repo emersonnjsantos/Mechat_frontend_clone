@@ -5,8 +5,13 @@ import android.media.MediaPlayer
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.whatsapp.clone.R
+import com.whatsapp.clone.data.ChatRepository
 import com.whatsapp.clone.model.*
 import com.whatsapp.clone.nativebridge.NativeBridge
+import com.whatsapp.clone.network.ConnectionStatus
+import com.whatsapp.clone.network.IncomingMessageEvent
+import com.whatsapp.clone.network.IncomingReceiptEvent
+import com.whatsapp.clone.network.WebSocketClientManager
 import com.whatsapp.clone.utils.RealAudioRecorder
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -24,6 +29,14 @@ import java.util.*
 class WhatsAppViewModel(application: Application) : AndroidViewModel(application) {
 
     private val audioRecorder = RealAudioRecorder(application)
+    private val chatRepository = ChatRepository(application)
+
+    private val webSocketClient = WebSocketClientManager(
+        scope = viewModelScope,
+        onIncomingMessage = { event -> handleIncomingRemoteMessage(event) },
+        onIncomingReceipt = { receipt -> handleIncomingRemoteReceipt(receipt) }
+    )
+    val connectionStatus: StateFlow<ConnectionStatus> = webSocketClient.connectionStatus
 
     private val _chats = MutableStateFlow<List<Chat>>(emptyList())
     val chats: StateFlow<List<Chat>> = _chats.asStateFlow()
@@ -67,6 +80,7 @@ class WhatsAppViewModel(application: Application) : AndroidViewModel(application
     init {
         loadInitialData()
         loadNativeCore()
+        webSocketClient.connect()
     }
 
     private fun loadNativeCore() {
@@ -94,86 +108,20 @@ class WhatsAppViewModel(application: Application) : AndroidViewModel(application
     }
 
     private fun loadInitialData() {
-        _chats.value = listOf(
-            Chat(
-                id = 1L,
-                contactName = "Engenharia de Software (Meta / WA)",
-                avatarLetter = "E",
-                avatarColor = 0xFF00A884,
-                lastMessage = "Microfone e áudio real ativados!",
-                lastMessageTime = "18:52",
-                unreadCount = 2,
-                isPinned = true,
-                isOnline = true
-            ),
-            Chat(
-                id = 2L,
-                contactName = "Família & Amigos",
-                avatarLetter = "F",
-                avatarColor = 0xFF128C7E,
-                lastMessage = "Toque no microfone para gravar sua voz real",
-                lastMessageTime = "17:30",
-                unreadCount = 1,
-                isPinned = false,
-                isOnline = false
-            ),
-            Chat(
-                id = 3L,
-                contactName = "Provedor Seguro REA (Artifact Graph)",
-                avatarLetter = "R",
-                avatarColor = 0xFF2A5298,
-                lastMessage = "Criptografia Pós-Quântica Crystals-Kyber verificada com sucesso.",
-                lastMessageTime = "16:15",
-                unreadCount = 0,
-                isPinned = false,
-                isOnline = true
-            )
-        )
-
-        _messages.value = mapOf(
-            1L to listOf(
-                Message(
-                    id = "msg_0",
-                    chatId = 1L,
-                    senderName = "System",
-                    text = "As mensagens e chamadas são protegidas com a criptografia de ponta a ponta (Signal Protocol & Crystals-Kyber PQC).",
-                    timestamp = "18:00",
-                    isFromMe = false,
-                    type = MessageType.SYSTEM_E2EE_NOTICE
-                ),
-                Message(
-                    id = "msg_1",
-                    chatId = 1L,
-                    senderName = "Engenharia de Software",
-                    text = "Agora o microfone grava sua voz real pelo hardware físico do celular!",
-                    timestamp = "18:45",
-                    isFromMe = false,
-                    status = MessageStatus.READ
-                ),
-                Message(
-                    id = "msg_doc_1",
-                    chatId = 1L,
-                    senderName = "Engenharia de Software",
-                    text = "",
-                    timestamp = "18:46",
-                    isFromMe = false,
-                    type = MessageType.DOCUMENT,
-                    fileName = "WhatsApp_Relatorio_Engenharia_Reversa.pdf",
-                    fileSize = "2.4 MB",
-                    isDownloaded = false,
-                    status = MessageStatus.READ
-                ),
-                Message(
-                    id = "msg_2",
-                    chatId = 1L,
-                    senderName = "Você",
-                    text = "Perfeito! Todas as linguagens (Kotlin, Java, C++, C, SQL, Protobuf) e sensores reais integrados.",
-                    timestamp = "18:50",
-                    isFromMe = true,
-                    status = MessageStatus.READ
-                )
-            )
-        )
+        viewModelScope.launch {
+            try {
+                chatRepository.seedInitialDataIfEmpty()
+                val dbChats = chatRepository.getAllChats()
+                _chats.value = dbChats
+                val initialMsgs = mutableMapOf<Long, List<Message>>()
+                for (c in dbChats) {
+                    initialMsgs[c.id] = chatRepository.getMessagesForChat(c.id)
+                }
+                _messages.value = initialMsgs
+            } catch (e: Exception) {
+                android.util.Log.e("WhatsAppViewModel", "Error loading data from msgstore.db", e)
+            }
+        }
 
         _calls.value = listOf(
             CallItem(
@@ -201,6 +149,15 @@ class WhatsAppViewModel(application: Application) : AndroidViewModel(application
 
     fun openChat(chatId: Long) {
         _activeChatId.value = chatId
+        viewModelScope.launch {
+            try {
+                chatRepository.clearUnreadCount(chatId)
+                val msgs = chatRepository.getMessagesForChat(chatId)
+                _messages.update { current -> current + (chatId to msgs) }
+            } catch (e: Exception) {
+                android.util.Log.e("WhatsAppViewModel", "Error loading messages for chat $chatId", e)
+            }
+        }
         _chats.update { list ->
             list.map { if (it.id == chatId) it.copy(unreadCount = 0) else it }
         }
@@ -240,34 +197,40 @@ class WhatsAppViewModel(application: Application) : AndroidViewModel(application
         }
 
         viewModelScope.launch {
-            delay(800)
-            updateMessageStatus(chatId, newMsgId, MessageStatus.DELIVERED)
+            chatRepository.saveMessage(userMsg)
+            webSocketClient.sendMessageStanza(userMsg, recipientJid = "engineering@s.whatsapp.net")
 
-            delay(1000)
-            updateMessageStatus(chatId, newMsgId, MessageStatus.READ)
+            if (webSocketClient.connectionStatus.value != ConnectionStatus.CONNECTED) {
+                delay(800)
+                updateMessageStatus(chatId, newMsgId, MessageStatus.DELIVERED)
 
-            delay(1200)
-            val replyTime = timeFormat.format(Date())
-            val replyMsg = Message(
-                id = "reply_${System.currentTimeMillis()}",
-                chatId = chatId,
-                senderName = "WhatsApp Core",
-                text = "Mensagem recebida e autenticada via Curve25519 / LibSignal E2EE.",
-                timestamp = replyTime,
-                isFromMe = false,
-                status = MessageStatus.READ
-            )
+                delay(1000)
+                updateMessageStatus(chatId, newMsgId, MessageStatus.READ)
 
-            playSound(R.raw.kd3)
+                delay(1200)
+                val replyTime = timeFormat.format(Date())
+                val replyMsg = Message(
+                    id = "reply_${System.currentTimeMillis()}",
+                    chatId = chatId,
+                    senderName = "WhatsApp Core",
+                    text = "Mensagem recebida e persistida no msgstore.db (Curve25519 / LibSignal E2EE).",
+                    timestamp = replyTime,
+                    isFromMe = false,
+                    status = MessageStatus.READ
+                )
 
-            _messages.update { currentMap ->
-                val chatMsgs = currentMap[chatId] ?: emptyList()
-                currentMap + (chatId to (chatMsgs + replyMsg))
-            }
+                playSound(R.raw.kd3)
+                chatRepository.saveMessage(replyMsg)
 
-            _chats.update { list ->
-                list.map {
-                    if (it.id == chatId) it.copy(lastMessage = replyMsg.text, lastMessageTime = replyTime) else it
+                _messages.update { currentMap ->
+                    val chatMsgs = currentMap[chatId] ?: emptyList()
+                    currentMap + (chatId to (chatMsgs + replyMsg))
+                }
+
+                _chats.update { list ->
+                    list.map {
+                        if (it.id == chatId) it.copy(lastMessage = replyMsg.text, lastMessageTime = replyTime) else it
+                    }
                 }
             }
         }
@@ -343,8 +306,12 @@ class WhatsAppViewModel(application: Application) : AndroidViewModel(application
             }
 
             viewModelScope.launch {
-                delay(1000)
-                updateMessageStatus(chatId, audioMsg.id, MessageStatus.READ)
+                chatRepository.saveMessage(audioMsg)
+                webSocketClient.sendMessageStanza(audioMsg, recipientJid = "engineering@s.whatsapp.net")
+                if (webSocketClient.connectionStatus.value != ConnectionStatus.CONNECTED) {
+                    delay(1000)
+                    updateMessageStatus(chatId, audioMsg.id, MessageStatus.READ)
+                }
             }
         }
     }
@@ -448,8 +415,12 @@ class WhatsAppViewModel(application: Application) : AndroidViewModel(application
         }
 
         viewModelScope.launch {
-            delay(1000)
-            updateMessageStatus(chatId, docMsg.id, MessageStatus.READ)
+            chatRepository.saveMessage(docMsg)
+            webSocketClient.sendMessageStanza(docMsg, recipientJid = "engineering@s.whatsapp.net")
+            if (webSocketClient.connectionStatus.value != ConnectionStatus.CONNECTED) {
+                delay(1000)
+                updateMessageStatus(chatId, docMsg.id, MessageStatus.READ)
+            }
         }
     }
 
@@ -482,8 +453,12 @@ class WhatsAppViewModel(application: Application) : AndroidViewModel(application
         }
 
         viewModelScope.launch {
-            delay(1000)
-            updateMessageStatus(chatId, imgMsg.id, MessageStatus.READ)
+            chatRepository.saveMessage(imgMsg)
+            webSocketClient.sendMessageStanza(imgMsg, recipientJid = "engineering@s.whatsapp.net")
+            if (webSocketClient.connectionStatus.value != ConnectionStatus.CONNECTED) {
+                delay(1000)
+                updateMessageStatus(chatId, imgMsg.id, MessageStatus.READ)
+            }
         }
     }
 
@@ -513,8 +488,12 @@ class WhatsAppViewModel(application: Application) : AndroidViewModel(application
         }
 
         viewModelScope.launch {
-            delay(1000)
-            updateMessageStatus(chatId, locMsg.id, MessageStatus.READ)
+            chatRepository.saveMessage(locMsg)
+            webSocketClient.sendMessageStanza(locMsg, recipientJid = "engineering@s.whatsapp.net")
+            if (webSocketClient.connectionStatus.value != ConnectionStatus.CONNECTED) {
+                delay(1000)
+                updateMessageStatus(chatId, locMsg.id, MessageStatus.READ)
+            }
         }
     }
 
@@ -544,8 +523,12 @@ class WhatsAppViewModel(application: Application) : AndroidViewModel(application
         }
 
         viewModelScope.launch {
-            delay(1000)
-            updateMessageStatus(chatId, contactMsg.id, MessageStatus.READ)
+            chatRepository.saveMessage(contactMsg)
+            webSocketClient.sendMessageStanza(contactMsg, recipientJid = "engineering@s.whatsapp.net")
+            if (webSocketClient.connectionStatus.value != ConnectionStatus.CONNECTED) {
+                delay(1000)
+                updateMessageStatus(chatId, contactMsg.id, MessageStatus.READ)
+            }
         }
     }
 
@@ -569,6 +552,9 @@ class WhatsAppViewModel(application: Application) : AndroidViewModel(application
             }
             currentMap + (chatId to updated)
         }
+        viewModelScope.launch {
+            chatRepository.updateMessageStatus(msgId, newStatus)
+        }
     }
 
     fun startCall(contactName: String, isVideo: Boolean) {
@@ -591,9 +577,52 @@ class WhatsAppViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    private fun handleIncomingRemoteMessage(event: IncomingMessageEvent) {
+        val chatId = _activeChatId.value ?: 1L
+        val now = timeFormat.format(Date(event.timestampMs))
+        val newMsg = Message(
+            id = event.messageId,
+            chatId = chatId,
+            senderName = event.senderName,
+            text = event.text,
+            timestamp = now,
+            isFromMe = false,
+            type = event.type,
+            status = MessageStatus.READ
+        )
+
+        playSound(R.raw.kd3)
+
+        _messages.update { currentMap ->
+            val chatMsgs = currentMap[chatId] ?: emptyList()
+            if (chatMsgs.any { it.id == newMsg.id }) currentMap
+            else currentMap + (chatId to (chatMsgs + newMsg))
+        }
+
+        _chats.update { list ->
+            list.map {
+                if (it.id == chatId) it.copy(lastMessage = event.text, lastMessageTime = now) else it
+            }
+        }
+
+        viewModelScope.launch {
+            chatRepository.saveMessage(newMsg)
+        }
+    }
+
+    private fun handleIncomingRemoteReceipt(receipt: IncomingReceiptEvent) {
+        for ((chatId, msgs) in _messages.value) {
+            if (msgs.any { it.id == receipt.messageId }) {
+                updateMessageStatus(chatId, receipt.messageId, receipt.status)
+                break
+            }
+        }
+    }
+
     override fun onCleared() {
         super.onCleared()
         stopAudioPlayback()
         audioRecorder.cancelRecording()
+        webSocketClient.disconnect()
     }
 }

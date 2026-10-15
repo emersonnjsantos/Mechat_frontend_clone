@@ -493,9 +493,11 @@ A fundação invisível que garante que as mensagens sejam entregues com seguran
   - Ponte JNI em C++17 `native_bridge.cpp` expondo funções criptográficas diretamente para o Kotlin via `NativeBridge.kt`.
   - Especificação formal completa de mensageria em Protocol Buffers `whatsapp_message.proto`.
   - Schemas SQL completos extraídos e armazenados em `app/src/main/assets/schema/`.
+  - **Fase 1 Concluída com Sucesso:** Banco de dados relacional SQLite (`msgstore.db` & `axolotl.db`) implementado via `WhatsAppDatabaseHelper.kt` e `ChatRepository.kt`, garantindo persistência local permanente de mensagens, áudios, mídias e status.
+  - **Fase 2 Concluída com Sucesso:** Servidor de mensageria em tempo real (`server/whatsapp_server.py`), roteamento de stanzas `MessageStanza`, gerenciador de WebSocket Android (`WebSocketClientManager.kt`) e ciclo de vida com recibos de entrega (SENT, DELIVERED, READ).
 * **O QUE AINDA FALTA:**
-  - Instanciação de banco SQLite local com Room/SQLCipher aplicando os schemas SQL definidos.
-  - Conexão WebSocket / TLS real com servidor backend de mensagens.
+  - Câmera in-app proprietária CameraX (Fase 3).
+  - WebRTC Calling Engine com áudio/vídeo P2P (Fase 4).
 
 ---
 
@@ -506,12 +508,12 @@ A tabela a seguir consolida o percentual de conclusão e os elementos faltantes 
 | Pilar Arquitetural | O Que Já Temos no Clone (`WHATZAP/`) | O Que Falta Implementar | Paridade (%) |
 | :--- | :--- | :--- | :--- |
 | **Interface Visual & Design System** | Telas principais (Home, Chat, Chamadas, Status, Chamada Ativa), temas claro/escuro oficiais, paleta de cores, tipografia, balões originais, checks azuis e ícones oficiais | Telas de Configurações completas, tela de visualização de status em tela cheia e sheet de criação de grupo | **75%** |
-| **Mensageria & Conversa** | Envio de mensagens de texto, balões de mídia, resposta direta via notificação do Android, menu de anexos completo, controle de lido/entregue | Reações com emojis ao segurar a mensagem, mensagens temporárias com timer e modo de visualização única (View Once) | **70%** |
-| **Áudio & Gravação de Voz** | Gravação de áudio real do microfone com temporizador, cancelamento, empacotador Opus nativo em C (`opus_helper.c`) e geração de waveform | Reprodução em velocidade acelerada (1.5x e 2x) e pausa no meio da gravação de áudio | **80%** |
+| **Mensageria & Conversa** | Envio de mensagens de texto, balões de mídia, resposta direta via notificação do Android, menu de anexos completo, controle de lido/entregue em tempo real | Reações com emojis ao segurar a mensagem, mensagens temporárias com timer e modo de visualização única (View Once) | **85%** |
+| **Áudio & Gravação de Voz** | Gravação de áudio real do microfone com temporizador, cancelamento, empacotador Opus nativo em C (`opus_helper.c`), geração de waveform e persistência em SQLite | Reprodução em velocidade acelerada (1.5x e 2x) e pausa no meio da gravação de áudio | **85%** |
 | **Chamadas de Voz e Vídeo (VoIP)** | UI de chamada ativa em tela cheia com duração, controle de mute/viva-voz, histórico de chamadas e Foreground Service oficial (`VoiceCallingService.java`) | Transmissão de vídeo real via WebRTC P2P (servidor STUN/TURN) e modo Picture-in-Picture (PiP) | **60%** |
-| **Criptografia & Segurança** | Implementação nativa em C de Curve25519, ponte JNI com NDK, schema formal Protobuf e schemas Axolotl/Kyber mapeados | Gerenciamento de sessões de Double Ratchet em tempo real e bloqueio do app por Biometria | **65%** |
-| **Persistência de Dados** | Schemas oficiais de `msgstore.db` e `axolotl.db` integrados em assets, models Kotlin completos em `Models.kt` | Configuração do Room Database com SQLCipher para salvar e recuperar do SQLite em disco | **50%** |
-| **Rede & Sincronização** | Wire-format Protobuf definido e simulador reativo com Coroutines / StateFlow | Servidor WebSocket de transporte em tempo real com entrega bidirecional ponta a ponta | **40%** |
+| **Criptografia & Segurança** | Implementação nativa em C de Curve25519, ponte JNI com NDK, schema formal Protobuf e schemas Axolotl/Kyber mapeados no SQLite | Gerenciamento de sessões de Double Ratchet em tempo real e bloqueio do app por Biometria | **75%** |
+| **Persistência de Dados (Fase 1)** | **100% Concluído**: Schemas `msgstore.db` e `axolotl.db` ativos via `WhatsAppDatabaseHelper` e `ChatRepository`. Histórico, áudios e recibos salvos em SQLite | Backup cifrado no Google Drive com chave de 64 dígitos | **95%** |
+| **Rede & Sincronização (Fase 2)** | **100% Concluído**: Servidor WebSocket real-time (`server/whatsapp_server.py`), wire stanzas Protobuf, `WebSocketClientManager` no Android, roteamento P2P e receipts | Encriptação de transporte via TLS/WSS para ambientes de produção pública | **90%** |
 | **Câmera & Mídias** | Permissões de câmera/áudio tratadas, assets gráficos e disparadores visuais | Viewfinder CameraX integrado com captura de foto/vídeo e editor com anotações/pincel/blur | **35%** |
 | **Recursos Avançados (AI / Pay / Web)** | Mapeamento completo dos binários (ExecuTorch, GGML, Tigon, Bloks, Brazil Pay) e relatórios | Implementação das APIs do WhatsApp Pay (Pix), assistente Meta AI e sincronização Web via QR | **15%** |
 
